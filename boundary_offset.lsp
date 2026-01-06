@@ -11,7 +11,7 @@
 
 (defun C:BOUNDARYOFFSET (/ ss cnt idx ent ent-data pt-list min-x min-y max-x max-y 
                            inner-boundary outer-boundary offset-dist 
-                           center-pt offset-pt x-val y-val vertices bbox radius)
+                           center-pt offset-pt x-val y-val vertices radius)
   
   ;;;--------------------------------------------------------------------
   ;;; STEP 1: Prompt user to select objects
@@ -93,8 +93,7 @@
         (if (or (= (cdr (assoc 0 ent-data)) "POLYLINE")
                 (= (cdr (assoc 0 ent-data)) "LWPOLYLINE"))
           (progn
-            (setq vertices (list))
-            ;; For LWPOLYLINE, vertices are in the main entity
+            ;; For LWPOLYLINE, vertices are in the main entity data
             (if (= (cdr (assoc 0 ent-data)) "LWPOLYLINE")
               (progn
                 (foreach pair ent-data
@@ -105,6 +104,27 @@
                       (if (> x-val max-x) (setq max-x x-val))
                       (if (< y-val min-y) (setq min-y y-val))
                       (if (> y-val max-y) (setq max-y y-val))
+                    )
+                  )
+                )
+              )
+              ;; For old-style POLYLINE, traverse vertex sub-entities
+              (progn
+                (setq vertices ent)
+                (while (setq vertices (entnext vertices))
+                  (setq ent-data (entget vertices))
+                  (if (= (cdr (assoc 0 ent-data)) "VERTEX")
+                    (progn
+                      (setq pt-list (cdr (assoc 10 ent-data)))
+                      (setq x-val (car pt-list) y-val (cadr pt-list))
+                      (if (< x-val min-x) (setq min-x x-val))
+                      (if (> x-val max-x) (setq max-x x-val))
+                      (if (< y-val min-y) (setq min-y y-val))
+                      (if (> y-val max-y) (setq max-y y-val))
+                    )
+                    ;; Break when we reach SEQEND
+                    (if (= (cdr (assoc 0 ent-data)) "SEQEND")
+                      (setq vertices nil)
                     )
                   )
                 )
