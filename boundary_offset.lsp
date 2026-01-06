@@ -9,9 +9,9 @@
 ;;;                   calculation to create outer boundary.
 ;;;========================================================================
 
-(defun C:BOUNDARYOFFSET (/ ss cnt idx ent ent-data pt-list min-x min-y max-x max-y 
+(defun C:BOUNDARYOFFSET (/ ss cnt idx ent ent-data ent-type pt-list min-x min-y max-x max-y 
                            inner-boundary outer-boundary offset-dist 
-                           center-pt offset-pt x-val y-val vertices radius)
+                           center-pt offset-pt x-val y-val ent-pointer radius)
   
   ;;;--------------------------------------------------------------------
   ;;; STEP 1: Prompt user to select objects
@@ -50,8 +50,8 @@
       ;; an automatic internal point for the boundary creation
       (princ "\nAnalyzing selected objects...")
       
-      ;; Initialize min/max values with large/small numbers
-      (setq min-x 1e99 min-y 1e99 max-x -1e99 max-y -1e99)
+      ;; Initialize min/max values with nil for proper first-point handling
+      (setq min-x nil min-y nil max-x nil max-y nil)
       (setq cnt (sslength ss))
       (setq idx 0)
       
@@ -59,72 +59,73 @@
       (while (< idx cnt)
         (setq ent (ssname ss idx))
         (setq ent-data (entget ent))
+        (setq ent-type (cdr (assoc 0 ent-data)))
         
         ;; Extract coordinate points based on entity type
         ;; Handle LINE entities
-        (if (= (cdr (assoc 0 ent-data)) "LINE")
+        (if (= ent-type "LINE")
           (progn
             (setq pt-list (list (cdr (assoc 10 ent-data)) 
                                (cdr (assoc 11 ent-data))))
             (foreach pt pt-list
               (setq x-val (car pt) y-val (cadr pt))
-              (if (< x-val min-x) (setq min-x x-val))
-              (if (> x-val max-x) (setq max-x x-val))
-              (if (< y-val min-y) (setq min-y y-val))
-              (if (> y-val max-y) (setq max-y y-val))
+              (if (or (not min-x) (< x-val min-x)) (setq min-x x-val))
+              (if (or (not max-x) (> x-val max-x)) (setq max-x x-val))
+              (if (or (not min-y) (< y-val min-y)) (setq min-y y-val))
+              (if (or (not max-y) (> y-val max-y)) (setq max-y y-val))
             )
           )
         )
         
         ;; Handle CIRCLE entities
-        (if (= (cdr (assoc 0 ent-data)) "CIRCLE")
+        (if (= ent-type "CIRCLE")
           (progn
             (setq center-pt (cdr (assoc 10 ent-data)))
             (setq radius (cdr (assoc 40 ent-data)))
             (setq x-val (car center-pt) y-val (cadr center-pt))
-            (if (< (- x-val radius) min-x) (setq min-x (- x-val radius)))
-            (if (> (+ x-val radius) max-x) (setq max-x (+ x-val radius)))
-            (if (< (- y-val radius) min-y) (setq min-y (- y-val radius)))
-            (if (> (+ y-val radius) max-y) (setq max-y (+ y-val radius)))
+            (if (or (not min-x) (< (- x-val radius) min-x)) (setq min-x (- x-val radius)))
+            (if (or (not max-x) (> (+ x-val radius) max-x)) (setq max-x (+ x-val radius)))
+            (if (or (not min-y) (< (- y-val radius) min-y)) (setq min-y (- y-val radius)))
+            (if (or (not max-y) (> (+ y-val radius) max-y)) (setq max-y (+ y-val radius)))
           )
         )
         
         ;; Handle POLYLINE/LWPOLYLINE entities - get all vertices
-        (if (or (= (cdr (assoc 0 ent-data)) "POLYLINE")
-                (= (cdr (assoc 0 ent-data)) "LWPOLYLINE"))
+        (if (or (= ent-type "POLYLINE") (= ent-type "LWPOLYLINE"))
           (progn
             ;; For LWPOLYLINE, vertices are in the main entity data
-            (if (= (cdr (assoc 0 ent-data)) "LWPOLYLINE")
+            (if (= ent-type "LWPOLYLINE")
               (progn
                 (foreach pair ent-data
                   (if (= (car pair) 10)
                     (progn
                       (setq x-val (cadr pair) y-val (caddr pair))
-                      (if (< x-val min-x) (setq min-x x-val))
-                      (if (> x-val max-x) (setq max-x x-val))
-                      (if (< y-val min-y) (setq min-y y-val))
-                      (if (> y-val max-y) (setq max-y y-val))
+                      (if (or (not min-x) (< x-val min-x)) (setq min-x x-val))
+                      (if (or (not max-x) (> x-val max-x)) (setq max-x x-val))
+                      (if (or (not min-y) (< y-val min-y)) (setq min-y y-val))
+                      (if (or (not max-y) (> y-val max-y)) (setq max-y y-val))
                     )
                   )
                 )
               )
               ;; For old-style POLYLINE, traverse vertex sub-entities
               (progn
-                (setq vertices ent)
-                (while (setq vertices (entnext vertices))
-                  (setq ent-data (entget vertices))
-                  (if (= (cdr (assoc 0 ent-data)) "VERTEX")
+                (setq ent-pointer ent)
+                (while (setq ent-pointer (entnext ent-pointer))
+                  (setq ent-data (entget ent-pointer))
+                  (setq ent-type (cdr (assoc 0 ent-data)))
+                  (if (= ent-type "VERTEX")
                     (progn
                       (setq pt-list (cdr (assoc 10 ent-data)))
                       (setq x-val (car pt-list) y-val (cadr pt-list))
-                      (if (< x-val min-x) (setq min-x x-val))
-                      (if (> x-val max-x) (setq max-x x-val))
-                      (if (< y-val min-y) (setq min-y y-val))
-                      (if (> y-val max-y) (setq max-y y-val))
+                      (if (or (not min-x) (< x-val min-x)) (setq min-x x-val))
+                      (if (or (not max-x) (> x-val max-x)) (setq max-x x-val))
+                      (if (or (not min-y) (< y-val min-y)) (setq min-y y-val))
+                      (if (or (not max-y) (> y-val max-y)) (setq max-y y-val))
                     )
                     ;; Break when we reach SEQEND
-                    (if (= (cdr (assoc 0 ent-data)) "SEQEND")
-                      (setq vertices nil)
+                    (if (= ent-type "SEQEND")
+                      (setq ent-pointer nil)
                     )
                   )
                 )
@@ -134,15 +135,15 @@
         )
         
         ;; Handle ARC entities
-        (if (= (cdr (assoc 0 ent-data)) "ARC")
+        (if (= ent-type "ARC")
           (progn
             (setq center-pt (cdr (assoc 10 ent-data)))
             (setq radius (cdr (assoc 40 ent-data)))
             (setq x-val (car center-pt) y-val (cadr center-pt))
-            (if (< (- x-val radius) min-x) (setq min-x (- x-val radius)))
-            (if (> (+ x-val radius) max-x) (setq max-x (+ x-val radius)))
-            (if (< (- y-val radius) min-y) (setq min-y (- y-val radius)))
-            (if (> (+ y-val radius) max-y) (setq max-y (+ y-val radius)))
+            (if (or (not min-x) (< (- x-val radius) min-x)) (setq min-x (- x-val radius)))
+            (if (or (not max-x) (> (+ x-val radius) max-x)) (setq max-x (+ x-val radius)))
+            (if (or (not min-y) (< (- y-val radius) min-y)) (setq min-y (- y-val radius)))
+            (if (or (not max-y) (> (+ y-val radius) max-y)) (setq max-y (+ y-val radius)))
           )
         )
         
@@ -166,7 +167,8 @@
       (princ "\nCreating inner boundary from selected objects...")
       
       ;; Use the -BOUNDARY command (command-line version) with calculated point
-      ;; This creates a polyline boundary without user interaction
+      ;; The command creates a polyline boundary without user interaction
+      ;; by using the calculated center point of the bounding box
       (command "._-BOUNDARY" center-pt "")
       
       ;; Get the last created entity (the inner boundary polyline)
